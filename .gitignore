@@ -1,0 +1,23 @@
+# 密钥：永不提交
+config/secret.json
+
+# 本地数据
+data/
+*.db
+*.db-wal
+*.db-shm
+covered.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
