@@ -1,0 +1,9 @@
+# Windows 批处理必须是 CRLF：LF-only 会让 cmd 把 setlocal 读成 tlocal，
+# 双击直接闪退。仓库里存 LF、检出时转 CRLF，避免依赖各人本地的 autocrlf 设置。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 源码与文档统一 LF
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf

@@ -63,7 +63,12 @@ class TestLocate(unittest.TestCase):
     def test_load_engine_exposes_sources(self):
         _root, _cls, sources, _store, _run = K.load_engine()
         self.assertIn("人民日报", sources.LISTERS)
-        self.assertEqual(len(sources.LISTERS), 5)
+        self.assertEqual(len(sources.LISTERS), 8)
+        # 后加的四个源必须在三个表里同时登记，否则会「抓得到列表、抓不到正文」
+        for name in ("求是网", "新华网", "人民网"):
+            self.assertIn(name, sources.LISTERS)
+            self.assertIn(name, sources.BODY_SELECTORS)
+            self.assertIn(name, sources.LIVE_ONLY)
 
 
 class TestCli(unittest.TestCase):

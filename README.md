@@ -4,11 +4,11 @@
 **按需抓取，不囤数据**——你说几天就抓几天，抓完即用，用完即弃。
 
 ```
-$ kaogong show --days 3
+$ python scripts/kaogong.py show --days 3
 
 # 考公素材 · 最近 3 天
 
-共 42 篇，按日期与命题价值排序
+共 186 篇，按日期与命题价值排序
 
 ## 1. "三张桌子"看作风（评论员观察）
 
@@ -25,7 +25,7 @@ $ kaogong show --days 3
 
 ## 能做什么
 
-- **五个源**：人民日报、光明网、半月谈、中国青年报、经济日报
+- **八个源**：求是网、人民日报、新华网、人民网、光明网、半月谈、中国青年报、经济日报
 - **15 个议题**：基层治理、乡村振兴、科技创新、营商环境、生态文明、文化自信、
   民生保障、数字经济、法治建设、干部作风、舆情应对、对外开放、人口人才、
   安全底线、消费内需
@@ -38,8 +38,8 @@ $ kaogong show --days 3
 需要 Python 3.9+，纯标准库，**无需安装任何依赖**。
 
 ```bash
-git clone https://github.com/Yym11345/kaogong-skill.git
-cd kaogong-skill
+git clone https://github.com/Yym11345/kaogong_sucaiku.skill.git
+cd kaogong_sucaiku.skill
 
 python scripts/kaogong.py show --days 1
 ```
@@ -79,7 +79,7 @@ Windows 上也可以直接双击 `kaogong.bat`，不带参数就显示今天的�
 这个仓库本身就是 skill 包。复制到 skills 目录：
 
 ```bash
-cp -r . ~/.workbuddy-ai/skills/kaogong
+cp -r . ~/.workbuddy-ai/skills/kaogongsucaiku
 ```
 
 之后直接问「最近三天有什么适合练对策题的申论素材」，助手会自己跑脚本。
@@ -124,7 +124,7 @@ cp config/secret.example.json config/secret.json
 ├── references/engine.md     引擎结构、议题、评分口径
 ├── kaogong.bat              Windows 双击入口
 ├── scraper/                 抓取引擎
-│   ├── sources.py           五源列表解析 + 正文提取
+│   ├── sources.py           八源列表解析 + 正文提取
 │   ├── classify.py          五维规则打分
 │   ├── store.py             SQLite 持久层
 │   ├── llm.py               AI 研判与背诵提取
@@ -146,7 +146,10 @@ python -m unittest discover -s tests
 - 正文来自第三方媒体，版权归原媒体所有，本工具仅作个人备考检索与学习之用。
 - 抓取依赖各家媒体的版面结构，改版后可能需要更新选择器。
 - 评分用于排序筛选，不代表真题命中率。
-- 光明网、半月谈是频道页，只反映当前最新，回溯历史日期时可能没有对应内容。
+- 光明网、半月谈、求是网、新华网、人民网是频道页，只反映当前最新，
+  回溯历史日期时可能没有对应内容。
+- 学习强国抓不到（全站 SPA + 登录态接口 + 瑞数反爬，headless 也拿不到），
+  央视网评、中新网评论、人民网理论、澎湃评论同为前端渲染，都没有接入。
 
 ## License
 

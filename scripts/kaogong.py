@@ -166,7 +166,7 @@ def do_fetch(days, limit=20, ai=False, ai_top=40, memo=False, memo_min=80,
         if not quiet:
             print(f"  [{day_s}] 抓取中…", flush=True)
         try:
-            arts = runner.crawl_day(day, limit, skip_live=not is_today)
+            arts = runner.crawl_day(day, limit, skip_live=not is_today, window_days=days)
         except Exception as e:
             print(f"  ! {day_s} 抓取失败：{type(e).__name__}: {e}")
             continue
@@ -491,9 +491,16 @@ def cmd_stats(args):
 
 
 def _size(p):
+    """缓存目录的实际占用。
+
+    只算 .db / .json，不算 .bak-* 备份——用户手动备份一份库，占用立刻翻倍，
+    报个「8 MB」会让人以为库胖了，其实数据没变。
+    """
     t = 0
     for root, _dirs, files in os.walk(p):
         for f in files:
+            if ".bak" in f:
+                continue
             try:
                 t += os.path.getsize(os.path.join(root, f))
             except Exception:

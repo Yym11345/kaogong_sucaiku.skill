@@ -35,8 +35,10 @@ class Article:
 
 NOISE = re.compile(
     r"^(返回目录|放大|缩小|全文复制|上一篇|下一篇|扫一扫|分享到|责任编辑|"
-    r"《人民日报》|《光明日报》|《经济日报》|《中国青年报》|第\s*\d+\s*版|"
-    r"版次|版面|阅读全文|【?纠错】?|字号|打印|关闭|广告|图片报道|本版责编.*)$"
+    r"《人民日报》|《光明日报》|《经济日报》|《中国青年报》|《求是》|第\s*\d+\s*版|"
+    r"版次|版面|阅读全文|【?纠错】?|字号|打印|关闭|广告|图片报道|本版责编.*|"
+    r"点击播报本文.*|打开|题[:：].*|分享让更多人看到|视频/海报制作.*|"
+    r"责编[:：].*|统筹[:：].*|监制[:：].*)$"
 )
 # 报头：「《人民日报》（2026年10月20日 第05版）」
 MASTHEAD = re.compile(r"^《[^》]{2,12}》\s*[（(]?\s*\d{4}\s*年.*版.*$")
@@ -44,6 +46,8 @@ MASTHEAD = re.compile(r"^《[^》]{2,12}》\s*[（(]?\s*\d{4}\s*年.*版.*$")
 SUBTITLE = re.compile(r"^[—–\-]{1,2}\s*\S.{0,48}$")
 # 署名/页脚行：「来源：中国青年报」「作者：李四」「责任编辑：张三」
 META_LINE = re.compile(r"^(作者[:：]|编辑[:：]|责任编辑[:：]|来源[:：]|发布时间[:：]|记者\s)")
+# 独立时间行：「2026-10-31 10:21:31」（求是网正文顶部会带）
+TIMESTAMP = re.compile(r"^\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?\s*\d{1,2}:\d{2}(:\d{2})?$")
 
 
 def clean_paras(paras, title=""):
@@ -51,10 +55,11 @@ def clean_paras(paras, title=""):
     out = []
     for block in paras:
         for raw in re.split(r"[\r\n]+", block or ""):
-            p = re.sub(r"[\u3000\xa0]+", " ", raw).strip()
+            # \u3000 全角空格、\xa0 nbsp、\u2003 em space（新华网正文用它做首行缩进）
+            p = re.sub(r"[\u3000\xa0\u2003\u2002]+", " ", raw).strip()
             if not p or len(p) < 2:
                 continue
-            if NOISE.match(p) or MASTHEAD.match(p) or META_LINE.match(p):
+            if NOISE.match(p) or MASTHEAD.match(p) or META_LINE.match(p) or TIMESTAMP.match(p):
                 continue
             if title and (p == title or p.strip("（）() ") == title.strip("（）() ")):
                 continue
@@ -103,7 +108,10 @@ def guess_author(paras):
     return ""
 
 
-TITLE_NOISE = re.compile(r"[_\-—|]\s*(光明网|人民网|新华网|求是网|半月谈网?|中国经济网|中青在线|中国青年报)\s*$")
+TITLE_NOISE = re.compile(
+    r"(?:[_\-—|]\s*(?:光明网|人民网|新华网|求是网|半月谈网?|中国经济网|中青在线|中国青年报)\s*"
+    r"|[-—]{1,2}\s*(?:观点|评论|时评|理论|国际|社会|法治|教育|科技|文化|经济|体育|军事)\s*-?)\s*$"
+)
 SKIP_TITLE = re.compile(r"^(图片报道|本版责编|广告|导读|目录|公告|启事)")
 
 
@@ -117,6 +125,9 @@ PREFIX_KEEP = {
     "光明时评", "光明观察", "光明论坛", "光明网评论员", "人民时评", "人民论坛",
     "评论员观察", "今日谈", "编者按", "记者", "新华社", "半月谈", "半月评论",
     "人民日报", "光明日报", "经济日报", "中国青年报", "央视快评", "新华时评",
+    # 新增源带来的栏目名：这些是「栏目」不是「作者」，拆出去会把栏目信息丢掉
+    "人民锐评", "新华网评", "求是网评论员", "求是杂志", "钟声", "仲音", "任平",
+    "宣言", "金社平", "人民观点", "光明网评",
 }
 
 
@@ -242,33 +253,89 @@ def list_ce(date_):
     )
 
 
-def list_gmw(date_):
-    """光明网时评频道（guancha.gmw.cn）。首页 SSR 约 60 条，含相对链接。"""
-    html = net.fetch("https://guancha.gmw.cn/")
+# ---------------------------------------------------------------- 频道页通用
+
+# 频道页源的 URL 模式。日期都带在路径里，比从正文猜可靠得多。
+# 每个正则必须含 (年)(月)(日) 三个捕获组，_channel_links 靠它取日期。
+# 求是网的栏目页用相对路径（20261031/{hex}/c.html），首页用绝对路径，
+# 所以主机名部分要可选，两种都吃。
+PAT_QSTHEORY = re.compile(
+    r"(?:qstheory\.cn/)?(\d{4})(\d{2})(\d{2})/[0-9a-f]{32}/c\.html")
+PAT_XINHUA = re.compile(r"/comments/(\d{4})(\d{2})(\d{2})/[0-9a-z]+/c\.html")
+# 新华时评/新华社评论员栏目页的稿子不挂在 /comments/ 下，而是散在 /20261031/、
+# /fortune/20261028/ 等各频道，所以栏目页要用这个宽松版，否则一条也抓不到。
+PAT_XINHUA_ANY = re.compile(r"/(\d{4})(\d{2})(\d{2})/[0-9a-z]+/c\.html")
+PAT_PEOPLE = re.compile(r"/n\d/(\d{4})/(\d{2})(\d{2})/c\d+-\d+\.html")
+# 光明网的年月之间是横杠、月日之间是斜杠：/2026-10/29/content_39071825.htm
+PAT_GMW = re.compile(r"/(\d{4})-(\d{2})/(\d{2})/content_\d+\.htm")
+
+
+def _channel_links(home, host_set, pat, source, channel):
+    """频道页通用抽取：首页链接 → 文章列表。
+
+    pat 必须含 (年)(月)(日) 三个捕获组，日期直接从 URL 取——
+    党媒频道页的 URL 一律带发布日期，比从正文里猜可靠。
+
+    注意顺序：**先 urljoin 再匹配正则**。光明网有一批 href 是
+    `2026-09/24/content_39019476.htm` 这种不带前导斜杠的相对路径，
+    直接拿 href 去匹配会漏掉一大半（实测 18 条 vs 80 条）。
+    """
+    html = net.fetch(home)
     if not html:
         return []
     root = dom.parse(html)
     out, seen = [], set()
-    pat = re.compile(r"/(\d{4})-(\d{2})/(\d{2})/content_\d+\.htm")
     for a in root.find_all("a"):
         href = a.get("href") or ""
-        if "content_" not in href:
+        if not href:
             continue
-        url = _safe(up.urljoin("https://guancha.gmw.cn/", href), {"guancha.gmw.cn"})
-        if not url:
+        url = _safe(up.urljoin(home, href), host_set)
+        if not url or url in seen:
             continue
         m = pat.search(url)
-        if not m or url in seen:
+        if not m:
             continue
         title, author = split_author_prefix(norm_title(a.text()))
         if len(title) < 6 or SKIP_TITLE.match(title):
             continue
         seen.add(url)
-        art = Article("光明网", "时评频道", title, url,
+        art = Article(source, channel, title, url,
                       f"{m.group(1)}-{m.group(2)}-{m.group(3)}")
         art.author = author
         out.append(art)
     return out
+
+
+def _merge(*groups):
+    """多栏目合并去重。
+
+    同一篇文章常同时出现在「最新」和「栏目」两个页面里，按 URL 去重即可；
+    标题可能因版面不同被改写，所以不用标题做键。
+    """
+    out, seen = [], set()
+    for arts in groups:
+        for a in arts:
+            if a.url in seen:
+                continue
+            seen.add(a.url)
+            out.append(a)
+    return out
+
+
+def list_gmw(date_):
+    """光明网：时评频道 + 理论频道。
+
+    两个频道都是 SSR 静态页，链接形如 /2026-10/29/content_39071825.htm。
+    理论频道（theory.gmw.cn）是《光明日报》理论版的稿子，属于申论最吃的那种
+    「有论点有论证」的长文，值得单独抓；实测多出约 20 条候选。
+    """
+    hosts = {"guancha.gmw.cn", "news.gmw.cn", "theory.gmw.cn", "www.gmw.cn"}
+    return _merge(
+        _channel_links("https://guancha.gmw.cn/", hosts, PAT_GMW,
+                       "光明网", "时评频道"),
+        _channel_links("https://theory.gmw.cn/", hosts, PAT_GMW,
+                       "光明网", "理论频道"),
+    )
 
 
 def list_banyuetan(date_):
@@ -299,16 +366,72 @@ def list_banyuetan(date_):
     return out
 
 
+def list_qstheory(date_):
+    """求是网：首页 + 求是网评栏目页。
+
+    首页（《求是》杂志官网，习近平重要文章首发地之一）覆盖理论长文；
+    /qswp.htm 是求是网评，日更一条，是申论最对口的那种短评。
+    URL 形如 /20261031/{32位hex}/c.html，日期在路径里。
+    """
+    hosts = {"www.qstheory.cn", "qstheory.cn"}
+    return _merge(
+        _channel_links("https://www.qstheory.cn/",
+                       hosts, PAT_QSTHEORY, "求是网", "求是首页"),
+        _channel_links("https://www.qstheory.cn/qswp.htm",
+                       hosts, PAT_QSTHEORY, "求是网", "求是网评"),
+    )
+
+
+def list_xinhua(date_):
+    """新华网评论：四个页面合并。
+
+    只抓 /comments/ 首页远远不够——那是个位次有限的推荐位，混着几个月前的
+    旧稿，七天里只出一条当天的。真正的日更在栏目页：
+      新华网评     /comments/wpyc/index.html
+      新华时评     /depthobserve/xhsp.html
+      新华社评论员  /depthobserve/xhsply.html
+    注意栏目页的稿子散落在各频道路径下（/20261031/、/fortune/20261028/），
+    必须用 PAT_XINHUA_ANY，用带 /comments/ 的 PAT_XINHUA 会一条都抓不到。
+    """
+    hosts = {"www.news.cn", "news.cn"}
+    return _merge(
+        _channel_links("http://www.news.cn/depthobserve/xhsp.html",
+                       hosts, PAT_XINHUA_ANY, "新华网", "新华时评"),
+        _channel_links("http://www.news.cn/depthobserve/xhsply.html",
+                       hosts, PAT_XINHUA_ANY, "新华网", "新华社评论员"),
+        _channel_links("http://www.news.cn/comments/wpyc/index.html",
+                       hosts, PAT_XINHUA, "新华网", "新华网评"),
+        _channel_links("http://www.news.cn/comments/",
+                       hosts, PAT_XINHUA, "新华网", "评论频道"),
+    )
+
+
+def list_people(date_):
+    """人民网观点频道。URL 形如 /n1/2026/1030/c461529-40824171.html。
+
+    注意：人民网的 href 相对/绝对混用，且同一文章常有多个 <a>，
+    必须用 urljoin + seen 去重，否则会重复计入。
+    """
+    return _channel_links(
+        "http://opinion.people.com.cn/",
+        {"opinion.people.com.cn", "www.people.com.cn", "people.com.cn"},
+        PAT_PEOPLE, "人民网", "观点频道",
+    )
+
+
 LISTERS = {
     "人民日报": list_rmrb,
     "光明网": list_gmw,
     "半月谈": list_banyuetan,
     "中国青年报": list_zqb,
     "经济日报": list_ce,
+    "求是网": list_qstheory,
+    "新华网": list_xinhua,
+    "人民网": list_people,
 }
 
 # 频道页类源只反映「当前最新」，不受 date 参数影响，回溯时无需重复抓
-LIVE_ONLY = {"光明网", "半月谈"}
+LIVE_ONLY = {"光明网", "半月谈", "求是网", "新华网", "人民网"}
 
 BODY_SELECTORS = {
     "人民日报": ["article", "article-box"],
@@ -316,6 +439,9 @@ BODY_SELECTORS = {
     "经济日报": ["article", "article-box"],
     "光明网": ["u-mainText", "con-text"],
     "半月谈": ["content", "article", "TRS_Editor", "detail-content"],
+    "求是网": ["text", "content"],
+    "新华网": ["main-left", "main"],
+    "人民网": ["voice-wrap", "rm_txt_con"],
 }
 
 

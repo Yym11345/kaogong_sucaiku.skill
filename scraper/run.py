@@ -15,6 +15,7 @@
 """
 import argparse
 import json
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,9 +23,23 @@ from datetime import date, timedelta
 
 from . import classify, sources, store
 
+# 栏目名 → 抓取优先级。数字小的先抓，因为频道页源有单源条数上限，
+# 排在后面的栏目会被整批截掉。
+_COMMENTARY = ("评论", "时评", "网评")
+_ANALYSIS = ("理论", "观察", "观点", "求是")
 
-def crawl_day(day, per_source_limit, workers=6, skip_live=False):
+
+def _channel_rank(channel):
+    if any(k in channel for k in _COMMENTARY):
+        return 0
+    if any(k in channel for k in _ANALYSIS):
+        return 1
+    return 2
+
+
+def crawl_day(day, per_source_limit, workers=6, skip_live=False, window_days=1):
     picked = []
+    day_str = day.isoformat() if hasattr(day, "isoformat") else str(day)
     for name, fn in sources.LISTERS.items():
         if skip_live and name in sources.LIVE_ONLY:
             continue
@@ -33,8 +48,28 @@ def crawl_day(day, per_source_limit, workers=6, skip_live=False):
         except Exception as e:
             print(f"  ! {name} 列表失败: {type(e).__name__}: {e}")
             continue
-        # 评论/理论类优先，其次按标题去重
-        arts.sort(key=lambda a: (0 if any(k in a.channel for k in ("评论", "时评", "理论", "观察")) else 1))
+        # 频道页源只反映「当前最新」，一屏里混着好几天，必须裁到本次窗口内。
+        # 注意窗口是 --days 而不是「当天」：周末党媒不更新，最新稿常常是前一天的，
+        # 只留当天会让求是/新华/人民这类源整批落空。
+        if name in sources.LIVE_ONLY:
+            before = len(arts)
+            lo = day - timedelta(days=max(0, window_days - 1))
+            kept = []
+            for a in arts:
+                try:
+                    d = date.fromisoformat(a.date)
+                except (ValueError, TypeError):
+                    continue
+                if lo <= d <= day:
+                    kept.append(a)
+            arts = kept
+            if before and not arts:
+                print(f"  · {name}: {before} 篇候选，无 {lo}~{day} 窗口内的")
+                continue
+        # 评论类优先，理论/观察次之，其余垫底。频道页源动辄上百条候选、
+        # 而 cap 只有 60，排序键漏一个栏目名，那个栏目就会整批被截掉——
+        # 「网评」曾经因此全灭（求是网评 45 条排在求是首页之后，一条不剩）。
+        arts.sort(key=lambda a: _channel_rank(a.channel))
         cap = 60 if name in sources.LIVE_ONLY else per_source_limit  # 频道页源量小，全抓
         picked.extend(arts[:cap] if cap else arts)
         print(f"  · {name}: {len(arts)} 篇候选")
@@ -50,7 +85,64 @@ def crawl_day(day, per_source_limit, workers=6, skip_live=False):
                 art = a
             if art.body and len(art.body) >= 150:
                 out.append(art)
-    return out
+    return _dedup_body(out)
+
+
+def _norm_body(body):
+    """正文归一：去掉所有空白和标点，只留汉字/字母/数字。
+
+    各站标点全半角不统一、分段也不同，只去空白对不齐。
+    """
+    return re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9]", "", body or "")
+
+
+def _dedup_body(arts):
+    """跨源转载去重。
+
+    党媒互相转载是常态（求是网转人民日报评论员文章、人民网转新华社通稿），
+    标题会加不同前缀，store 的标题指纹拦不住，只能看正文。两道关：
+
+    1. **前 120 字指纹**——同一篇稿子各站正文一致，这一步拦掉九成，且便宜；
+    2. **短正文是长正文的子串**——第 1 步拦不住「开头多一行」的情况：
+       人民网转人民日报时正文前面会多出「苏比努尔·依米提」这样的署名行，
+       整段错位 7 个字，前 120 字指纹就完全对不上了（实测漏了 19 篇）。
+       子串比较对齐的是整篇正文，不受开头偏移影响。
+    """
+    seen, kept = set(), []
+    for a in arts:
+        key = re.sub(r"\s+", "", (a.body or "")[:120])
+        if not key:
+            # 空正文没法比对，原样留下。调用方（crawl_day）已经滤掉 <150 字的，
+            # 这里再吞一遍只会让「抽取器坏掉」表现成「今天没稿子」，更难查。
+            kept.append(a)
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(a)
+
+    merged, norms = [], []
+    for a in kept:
+        na = _norm_body(a.body)
+        hit = -1
+        if len(na) >= 200:  # 太短的正文容易互相包含，不做子串比对
+            for i, nb in enumerate(norms):
+                if len(nb) < 200:
+                    continue
+                short, long_ = (na, nb) if len(na) <= len(nb) else (nb, na)
+                if short in long_:
+                    hit = i
+                    break
+        if hit < 0:
+            merged.append(a)
+            norms.append(na)
+        elif len(na) > len(norms[hit]):
+            merged[hit] = a  # 留正文更全的那个
+            norms[hit] = na
+
+    if len(merged) < len(arts):
+        print(f"  · 跨源转载去重：{len(arts)} → {len(merged)} 篇")
+    return merged
 
 
 def _rule_fields(cls):
@@ -331,7 +423,7 @@ def crawl(con, args):
     for i in range(args.days):
         day = date.today() - timedelta(days=i)
         print(f"[{day}] 抓取中…")
-        arts = crawl_day(day, args.limit, skip_live=(i > 0))
+        arts = crawl_day(day, args.limit, skip_live=(i > 0), window_days=args.days)
         new = 0
         for a in arts:
             try:

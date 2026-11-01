@@ -1,6 +1,6 @@
 ---
-name: kaogong
-description: 抓取并查询党媒评论素材，用于公务员考试备考（申论、言语理解、面试、常识）。按需抓取人民日报、光明网、半月谈、中国青年报、经济日报最近 N 天的评论与理论文章，天数由用户决定，按命题价值打分并给出可命题角度。当用户问「今天/最近几天有什么值得看的党媒评论」「某个议题（基层治理、乡村振兴、科技创新、营商环境、生态文明、民生保障等）有什么素材」「这篇文章能改成什么考题」「有没有能背的段落或金句」「帮我积累申论素材」「最近有什么面试热点」时使用。必须实际运行脚本抓取查询，不得凭训练记忆编造文章标题或内容。
+name: kaogongsucaiku
+description: 抓取并查询党媒评论素材，用于公务员考试备考（申论、言语理解、面试、常识）。按需抓取求是网、人民日报、新华网、人民网、光明网、半月谈、中国青年报、经济日报最近 N 天的评论与理论文章，天数由用户决定，按命题价值打分并给出可命题角度。当用户问「今天/最近几天有什么值得看的党媒评论」「某个议题（基层治理、乡村振兴、科技创新、营商环境、生态文明、民生保障等）有什么素材」「这篇文章能改成什么考题」「有没有能背的段落或金句」「帮我积累申论素材」「最近有什么面试热点」时使用。必须实际运行脚本抓取查询，不得凭训练记忆编造文章标题或内容。
 license: MIT
 agent_created: true
 metadata:
@@ -26,7 +26,7 @@ metadata:
 
 ## 怎么用
 
-唯一入口是 `scripts/kaogong.py`。**天数由用户决定**，默认 1 天（今天）。
+唯一入口是本 skill 目录下的 `scripts/kaogong.py`。**天数由用户决定**，默认 1 天（今天）。
 
 ```bash
 python scripts/kaogong.py show --days 1              # 今天
@@ -38,8 +38,9 @@ python scripts/kaogong.py deep --days 1              # 每日精读速记卡
 python scripts/kaogong.py stats                      # 库里现在有什么
 ```
 
-`scripts/kaogong.py` 是相对仓库根目录的路径；装在 skills 目录时换成实际安装位置，
-例如 `python ~/.workbuddy-ai/skills/kaogong/scripts/kaogong.py show --days 3`。
+需要 Python 3.9+，纯标准库，**无需安装任何依赖**。上面的 `scripts/kaogong.py`
+是相对仓库根目录的写法；装在 skills 目录时换成实际安装位置，
+例如 `python ~/.workbuddy-ai/skills/kaogongsucaiku/scripts/kaogong.py`。
 
 `show` / `search` / `memo` 会自动补齐缺失的日期：第一次跑会抓取（约 1—2 分钟），
 之后同一天再跑是秒回。加 `--no-fetch` 强制只读本地。
@@ -51,7 +52,7 @@ python scripts/kaogong.py stats                      # 库里现在有什么
 | `--days N` | 看最近几天，1—30。**用户说几天就几天** |
 | `--topic 议题` | 按议题筛（基层治理、乡村振兴、科技创新…共 15 个） |
 | `--track 用途` | 申论素材 / 言语语料 / 常识时政 / 面试热点 |
-| `--source 媒体` | 人民日报 / 光明网 / 半月谈 / 中国青年报 / 经济日报 |
+| `--source 媒体` | 求是网 / 人民日报 / 新华网 / 人民网 / 光明网 / 半月谈 / 中国青年报 / 经济日报 |
 | `--min-score N` | 最低命题价值（80 分以上是高价值线） |
 | `--limit N` | 返回条数（默认 20） |
 | `--json` | 输出结构化数据，便于二次处理 |
@@ -92,7 +93,7 @@ kaogong.bat --help                  # 全部命令
 python scripts/kaogong.py show --days 3
 ```
 
-`doctor` 做环境自检（主仓库、数据源、缓存位置、占用体积）。
+`doctor` 做环境自检（引擎目录、数据源、缓存位置、占用体积）。
 PowerShell 里如果中文显示乱码，先跑
 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
@@ -120,7 +121,7 @@ PowerShell 里如果中文显示乱码，先跑
 |---|---|
 | `找不到 scraper 包` | 设 `KAOGONG_HOME` 指向含 `scraper/` 的目录，或在 skill 目录建 `config.json`：`{"home": "<那个目录>"}` |
 | 某个源 0 篇 | 该媒体当天可能无更新或改版，其他源照常；不要因此判定抓取失败 |
-| AI 研判报错 | 检查主仓库 `config/secret.json` 的密钥是否有效 |
+| AI 研判报错 | 检查 `config/secret.json` 的密钥是否有效 |
 | 想彻底重来 | `python scripts/kaogong.py clean` 清空缓存，下次自动重抓 |
 
 ## 参考
